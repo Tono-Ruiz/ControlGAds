@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Campañas Google Ads</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Hover effect for buttons */
+        button:hover {
+            background-color: #4B8BF5;
+            transition: background-color 0.3s ease;
+        }
+        /* Tamaño más grande para las gráficas */
+        .chart-container {
+            max-width: 100%;
+            height: 400px; /* Ajusta el tamaño según sea necesario */
+        }
+        canvas {
+            width: 100% !important;
+            height: 90% !important; /* Ajuste de tamaño */
+        }
+        /* Alineación a la derecha en la tabla */
+        td, th {
+            text-align: right;
+            padding: 8px;
+        }
+        /* Alineación centrada para nombre y acciones */
+        .centered {
+            text-align: center;
+        }
+        /* Subir menú */
+        .menu-container {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4">
+
+    <!-- Menú de Navegación -->
+    <div class="max-w-6xl mx-auto bg-white p-6 rounded-lg shadow-md menu-container">
+        <h1 class="text-2xl font-bold text-gray-800">📊 Gestión de Campañas Google Ads</h1>
+        
+        <nav class="mt-4">
+            <ul class="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <li><button onclick="showSection('dashboard-container')" class="w-full p-3 bg-blue-500 text-white rounded">Dashboard</button></li>
+                <li><button onclick="showSection('campaigns')" class="w-full p-3 bg-green-500 text-white rounded">Gestión de Campañas</button></li>
+                <li><button onclick="showMessage()" class="w-full p-3 bg-yellow-500 text-white rounded">Análisis de Palabras Clave</button></li>
+                <li><button onclick="showMessage()" class="w-full p-3 bg-red-500 text-white rounded">Alertas Automáticas</button></li>
+                <li><button onclick="showMessage()" class="w-full p-3 bg-purple-500 text-white rounded">Historial de cambios</button></li>
+                <li><button onclick="showMessage()" class="w-full p-3 bg-indigo-500 text-white rounded">Reportes y Optimización</button></li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- Instrucciones de Uso -->
+    <div class="max-w-6xl mx-auto bg-white p-6 rounded-lg shadow-md mb-6">
+        <h1 class="text-xl font-bold text-gray-800"><i class="fas fa-book-open text-teal-500"></i> Instrucciones de Uso</h1>
+        <ul class="list-inside list-disc text-gray-800 mt-4">
+            <li><strong>Dashboard:</strong> Muestra el resumen de rendimiento de las campañas con gráficas de impresiones, clics, conversiones y costo por conversión.</li>
+            <li><strong>Gestión de Campañas:</strong> Aquí puedes añadir nuevas campañas, editarlas o borrarlas. Los datos se guardan localmente en tu navegador.</li>
+            <li><strong>Análisis de Palabras Clave:</strong> Identifica las palabras clave que generan conversiones y detecta aquellas que gastan presupuesto sin resultados.</li>
+            <li><strong>Alertas Automáticas:</strong> Recibirás notificaciones cuando una campaña esté gastando demasiado o tenga bajo rendimiento.</li>
+            <li><strong>Historial de Cambios:</strong> Visualiza los cambios realizados en las campañas y compara diferentes periodos de tiempo.</li>
+            <li><strong>Reportes y Optimización:</strong> Genera reportes detallados de rendimiento en PDF o Excel y recibe recomendaciones para optimizar las campañas.</li>
+        </ul>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard-container" class="max-w-6xl mx-auto bg-white p-6 rounded-lg shadow-md mt-6 hidden">
+        <!-- Gráficas -->
+        <div class="chart-container">
+            <h2 class="text-xl font-bold text-gray-800">📊 Dashboard de Campañas</h2>
+            <canvas id="chart-performance" class="mt-4"></canvas> <!-- Gráfica con tamaño ajustado -->
+        </div>
+    </div>
+
+    <!-- Gestión de Campañas -->
+    <div id="campaigns" class="max-w-6xl mx-auto bg-white p-6 rounded-lg shadow-md mt-6 hidden">
+        <h2 class="text-xl font-bold text-gray-800">📌 Gestión de Campañas</h2>
+        <button onclick="addCampaign()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded">Añadir Campaña</button>
+        <table class="mt-4 w-full border-collapse border border-gray-300">
+            <thead>
+                <tr class="bg-gray-200">
+                    <th class="border p-2">Nombre</th>
+                    <th class="border p-2">Impresiones</th>
+                    <th class="border p-2">Clics</th>
+                    <th class="border p-2">Conversiones</th>
+                    <th class="border p-2">Costo/Conversión</th>
+                    <th class="border p-2">Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="campaign-list"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // Abrir o crear la base de datos
+        let db;
+        const request = indexedDB.open("googleAdsDB", 1);
+        
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            loadCampaigns();
+        };
+
+        request.onerror = function(event) {
+            alert("Error al abrir la base de datos");
+        };
+
+        request.onupgradeneeded = function(event) {
+            db = event.target.result;
+            const objectStore = db.createObjectStore("campaigns", { keyPath: "id", autoIncrement: true });
+            objectStore.createIndex("name", "name", { unique: false });
+        };
+
+        // Función para mostrar las secciones
+        function showSection(sectionId) {
+            document.querySelectorAll('div[id]').forEach(div => div.classList.add('hidden'));
+            document.getElementById(sectionId).classList.remove('hidden');
+            if (sectionId === 'dashboard-container') updateDashboard();
+        }
+
+        // Función para mostrar mensajes de disponibilidad futura
+        function showMessage() {
+            alert("La opción estará disponible cuando se integre la API de Google Ads");
+        }
+
+        // Función para cargar campañas desde IndexedDB
+        function loadCampaigns() {
+            const objectStore = db.transaction("campaigns").objectStore("campaigns");
+            const request = objectStore.getAll();
+
+            request.onsuccess = function(event) {
+                const campaigns = event.target.result;
+                const tbody = document.getElementById("campaign-list");
+                tbody.innerHTML = "";
+
+                campaigns.forEach(campaign => {
+                    let row = document.createElement("tr");
+                    row.innerHTML = `
+                        <td class="border p-2 centered">${campaign.name}</td>
+                        <td class="border p-2">${campaign.impressions}</td>
+                        <td class="border p-2">${campaign.clicks}</td>
+                        <td class="border p-2">${campaign.conversions}</td>
+                        <td class="border p-2">${campaign.costPerConversion}</td>
+                        <td class="border p-2 centered">
+                            <button onclick="editCampaign(${campaign.id})" class="text-yellow-500"><i class="fas fa-edit"></i></button>
+                            <button onclick="deleteCampaign(${campaign.id})" class="text-red-500 ml-2"><i class="fas fa-trash"></i></button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            };
+        }
+
+        // Función para añadir una campaña
+        function addCampaign() {
+            let name = prompt("Nombre de la campaña:");
+            let impressions = prompt("Número de impresiones:");
+            let clicks = prompt("Número de clics:");
+            let conversions = prompt("Número de conversiones:");
+            let costPerConversion = prompt("Costo por conversión:");
+
+            if (name && impressions && clicks && conversions && costPerConversion) {
+                const transaction = db.transaction("campaigns", "readwrite");
+                const objectStore = transaction.objectStore("campaigns");
+                const newCampaign = {
+                    name: name,
+                    impressions: parseInt(impressions),
+                    clicks: parseInt(clicks),
+                    conversions: parseInt(conversions),
+                    costPerConversion: parseFloat(costPerConversion)
+                };
+
+                objectStore.add(newCampaign);
+                transaction.oncomplete = function() {
+                    loadCampaigns();
+                };
+            }
+        }
+
+        // Función para editar una campaña
+        function editCampaign(id) {
+            const transaction = db.transaction("campaigns", "readwrite");
+            const objectStore = transaction.objectStore("campaigns");
+            const request = objectStore.get(id);
+
+            request.onsuccess = function(event) {
+                const campaign = event.target.result;
+                const newName = prompt("Nombre de la campaña:", campaign.name);
+                const newImpressions = prompt("Número de impresiones:", campaign.impressions);
+                const newClicks = prompt("Número de clics:", campaign.clicks);
+                const newConversions = prompt("Número de conversiones:", campaign.conversions);
+                const newCostPerConversion = prompt("Costo por conversión:", campaign.costPerConversion);
+
+                if (newName && newImpressions && newClicks && newConversions && newCostPerConversion) {
+                    campaign.name = newName;
+                    campaign.impressions = parseInt(newImpressions);
+                    campaign.clicks = parseInt(newClicks);
+                    campaign.conversions = parseInt(newConversions);
+                    campaign.costPerConversion = parseFloat(newCostPerConversion);
+
+                    objectStore.put(campaign);
+                    transaction.oncomplete = function() {
+                        loadCampaigns();
+                    };
+                }
+            };
+        }
+
+        // Función para borrar una campaña
+        function deleteCampaign(id) {
+            const transaction = db.transaction("campaigns", "readwrite");
+            const objectStore = transaction.objectStore("campaigns");
+            objectStore.delete(id);
+
+            transaction.oncomplete = function() {
+                loadCampaigns();
+            };
+        }
+
+        // Función para actualizar el Dashboard
+        function updateDashboard() {
+            const objectStore = db.transaction("campaigns").objectStore("campaigns");
+            const request = objectStore.getAll();
+
+            request.onsuccess = function(event) {
+                let campaigns = event.target.result;
+                let labels = campaigns.map(c => c.name);
+                let impressions = campaigns.map(c => c.impressions);
+                let clicks = campaigns.map(c => c.clicks);
+                let conversions = campaigns.map(c => c.conversions);
+                let costPerConversion = campaigns.map(c => c.costPerConversion);
+
+                let ctx = document.getElementById("chart-performance").getContext("2d");
+                new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: "Impresiones", data: impressions, backgroundColor: "#FF9800" },
+                            { label: "Clics", data: clicks, backgroundColor: "#4CAF50" },
+                            { label: "Conversiones", data: conversions, backgroundColor: "#2196F3" },
+                            { label: "Costo/Conversión", data: costPerConversion, backgroundColor: "#9C27B0" }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            datalabels: {
+                                display: true, // Siempre mostrar los valores en las barras
+                                color: '#fff',
+                                align: 'center',
+                                anchor: 'center'
+                            }
+                        }
+                    }
+                });
+            };
+        }
+    </script>
+
+</body>
+</html>
